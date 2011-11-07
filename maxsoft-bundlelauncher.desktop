@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Launch Bundle File
+Exec=/usr/local/bin/bundlelauncher %u
+MimeType=application/x-bundle
+Terminal=false
+StartupNotify=false
+Type=Application
+NoDisplay=true
+X-Ubuntu-Gettext-Domain=nautilus
+

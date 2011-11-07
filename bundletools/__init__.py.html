@@ -1,0 +1,228 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<title>~/BundleTest/bundletools/__init__.py.html</title>
+<meta name="Generator" content="Vim/7.3">
+<meta name="plugin-version" content="vim7.3_v8">
+<meta name="syntax" content="python">
+<meta name="settings" content="use_css">
+<style type="text/css">
+<!--
+pre { font-family: monospace; color: #ffffff; background-color: #333333; }
+body { font-family: monospace; color: #ffffff; background-color: #333333; }
+.Comment { color: #87ceeb; }
+.Identifier { color: #98fb98; }
+.Statement { color: #f0e68c; font-weight: bold; }
+.Constant { color: #ffa0a0; }
+.PreProc { color: #cd5c5c; }
+-->
+</style>
+</head>
+<body>
+<pre>
+<span class="PreProc">import</span> apt.debfile
+<span class="PreProc">from</span> os <span class="PreProc">import</span> popen,access,mkdir,walk,path,chdir,symlink,tempnam,tmpfile,R_OK,W_OK,system,getcwd,makedirs,chmod,fchmod,remove,stat,fstat,listdir
+<span class="PreProc">import</span> sys
+<span class="PreProc">import</span> tarfile
+<span class="PreProc">import</span> subprocess
+<span class="PreProc">from</span> stat <span class="PreProc">import</span> *
+
+DIRECTORY_METADATA_STANDARD = <span class="Constant">&quot;BundleData&quot;</span>
+DIRECTORY_PKG_STANDARD = <span class="Constant">&quot;Data&quot;</span>
+DIRECTORY_SCRIPTS_STANDARD = <span class="Constant">&quot;Ubuntu&quot;</span>
+DIRECTORY_ICONS_STANDARD = <span class="Constant">&quot;Icons&quot;</span>
+
+__all__ = [<span class="Constant">&quot;BundleData&quot;</span>, <span class="Constant">&quot;BundleJail&quot;</span>, <span class="Constant">&quot;BundleScript&quot;</span>,<span class="Constant">&quot;launch_bundle&quot;</span>]
+
+<span class="Statement">class</span> <span class="Identifier">BundleData</span>(tarfile.TarFile):
+	<span class="Statement">def</span> <span class="Identifier">__init__</span>(self,bundle_file):
+		tarfile.TarFile.__init__(self,name=bundle_file,mode=<span class="Constant">'r'</span>)
+
+		self.DIRECTORY_METADATA = DIRECTORY_METADATA_STANDARD
+		self.DIRECTORY_PKG = DIRECTORY_PKG_STANDARD
+		self.DIRECTORY_SCRIPTS = DIRECTORY_SCRIPTS_STANDARD
+		self.DIRECTORY_ICONS = DIRECTORY_ICONS_STANDARD
+
+		self.bundle_file = path.abspath(bundle_file)
+
+		<span class="Comment"># PKGLIST</span>
+		self.filenames = self.getnames()
+		self.pkg_list = []
+		<span class="Statement">for</span> i <span class="Statement">in</span> self.filenames:
+			<span class="Statement">if</span> i != self.DIRECTORY_PKG <span class="Statement">and</span> i[:<span class="Identifier">len</span>(self.DIRECTORY_PKG)] == self.DIRECTORY_PKG:
+				self.pkg_list.append(self.getmember(i))
+		desktop_list = []
+		<span class="Statement">for</span> i <span class="Statement">in</span> self.pkg_list:
+			<span class="Statement">if</span> path.splitext(i.name)[<span class="Constant">1</span>] == <span class="Constant">&quot;.desktop&quot;</span>:
+				desktop_list.append(i)
+				desktop_app = <span class="Identifier">True</span>
+
+		<span class="Comment"># TEMPORARY DIRECTORY - FILES</span>
+		self.temporary_directory = tempnam(<span class="Identifier">None</span>,<span class="Constant">&quot;bun&quot;</span>)
+		self.temporary_directory_payload = path.join(self.temporary_directory,<span class="Constant">&quot;payload&quot;</span>)
+		makedirs(self.temporary_directory_payload)
+		self.log = <span class="Identifier">open</span>(path.join(self.temporary_directory,<span class="Constant">&quot;bundle.log&quot;</span>),<span class="Constant">&quot;w&quot;</span>)
+
+		<span class="Comment"># WRITER</span>
+		self.writer = tarfile.TarFile.<span class="Identifier">open</span>(path.join(self.temporary_directory,<span class="Constant">&quot;writer.tar&quot;</span>),<span class="Constant">&quot;w&quot;</span>)
+
+	<span class="Statement">def</span> <span class="Identifier">get_metafile_value</span>(self,path_to_metafile):
+		metafile = self.extractfile(self.getmember(path.join(self.DIRECTORY_METADATA,path_to_metafile)))
+		value = metafile.read()
+		metafile.close()
+		<span class="Statement">return</span> value
+
+	<span class="Statement">def</span> <span class="Identifier">put_metafile_value</span>(self,path_to_metafile,value):
+		metafile = tempfile()
+		metafile.write(value)
+		<span class="Statement">with</span> self.writer.gettarinfo(fileobj=metafile,arcname=path_to_metafile) <span class="Statement">as</span> tarinfo:
+				self.writer.addfile(tarinfo)
+
+	<span class="Statement">def</span> <span class="Identifier">deploy</span>(self):
+		<span class="Statement">for</span> i <span class="Statement">in</span> self.pkg_list:
+			target = path.join(self.temporary_directory_payload,i.name[<span class="Identifier">len</span>(self.DIRECTORY_PKG)+<span class="Constant">1</span>:])
+			reldir = path.split(target)[<span class="Constant">0</span>]
+			<span class="Statement">if</span> i.isdir():
+				mkdir(target,i.mode)
+			<span class="Statement">elif</span> i.isfile():
+				xf = self.extractfile(i)
+				<span class="Statement">with</span> <span class="Identifier">open</span>(path.join(target),<span class="Constant">&quot;w&quot;</span>) <span class="Statement">as</span> newfile:
+					newfile.write(xf.read())
+					fchmod(newfile.fileno(),i.mode)
+			<span class="Statement">elif</span> i.issym():
+				xp = path.abspath(path.join(reldir,i.linkpath))
+				symlink(xp,target)
+
+	<span class="Statement">def</span> <span class="Identifier">close</span>(self):
+		tarfile.TarFile.close(self)
+		self.writer.close()
+
+
+<span class="Statement">class</span> <span class="Identifier">BundleJail</span>(BundleData):
+	<span class="Statement">def</span> <span class="Identifier">__init__</span>(self,bundle_file):
+		BundleData.__init__(self,bundle_file)
+		self.temporary_directory_jail = path.join(self.temporary_directory,<span class="Constant">&quot;jail&quot;</span>)
+		mkdir(self.temporary_directory_jail)
+		self.rootdir = <span class="Constant">&quot;/&quot;</span>
+		self.runable = <span class="Constant">0</span>
+		self.force_run = <span class="Constant">0</span>
+
+	<span class="Statement">def</span> <span class="Identifier">getfile</span>(self,filepath):
+		xp = path.join(self.temporary_directory_payload,filepath)
+		rxp = path.join(self.temporary_directory_jail,filepath)
+		modebits = <span class="Constant">0777</span>
+		<span class="Statement">with</span> <span class="Identifier">open</span>(rxp,<span class="Constant">&quot;w&quot;</span>) <span class="Statement">as</span> newfile:
+			oldfile = <span class="Identifier">open</span>(xp,<span class="Constant">&quot;r&quot;</span>)
+			newfile.write(oldfile.read())
+			modebits = S_IMODE(fstat(oldfile.fileno()).st_mode)
+			oldfile.close()
+			fchmod(newfile.fileno(),modebits)
+
+	<span class="Statement">def</span> <span class="Identifier">deploy</span>(self):
+		BundleData.deploy(self)
+		cwd = getcwd()
+		filelist = []
+		<span class="Statement">for</span> i <span class="Statement">in</span> self.pkg_list:
+			rxp = i.name[<span class="Identifier">len</span>(self.DIRECTORY_PKG)+<span class="Constant">1</span>:]
+			filelist.append(rxp)
+		<span class="Statement">if</span> self.temporary_directory_jail == <span class="Identifier">None</span>: <span class="Statement">return</span> <span class="Identifier">False</span>
+		<span class="Statement">try</span>:
+			<span class="Statement">if</span> <span class="Statement">not</span> access(self.temporary_directory_jail,R_OK): mkdir(self.temporary_directory_jail)
+			<span class="Statement">if</span> <span class="Statement">not</span> access(self.temporary_directory_jail,W_OK) <span class="Statement">and</span> access(self.rootdir,R_OK): <span class="Statement">return</span> <span class="Identifier">False</span>
+			chdir(self.temporary_directory_jail)
+
+			<span class="Statement">for</span> root, dirs, files <span class="Statement">in</span> walk(self.rootdir):
+				rmlist = []
+				<span class="Comment">#print &quot;CWD  &quot;, root</span>
+
+				<span class="Comment"># Link system directories</span>
+				<span class="Statement">for</span> x <span class="Statement">in</span> dirs:
+					xp = path.abspath(path.join(root,x))
+					rxp = xp[<span class="Constant">1</span>:]
+					<span class="Statement">if</span> rxp <span class="Statement">not</span> <span class="Statement">in</span> filelist:
+						<span class="Comment">#print &quot;LNK  &quot;, rxp</span>
+						symlink(xp,rxp)
+						rmlist.append(x)
+					<span class="Statement">else</span>: <span class="Comment"># Create local directories</span>
+						<span class="Comment">#print &quot;MKD  &quot;, rxp</span>
+						mkdir(rxp)
+				<span class="Statement">for</span> x <span class="Statement">in</span> rmlist:
+					dirs.remove(x)
+
+				<span class="Comment"># Link system files</span>
+				exclude_list = []
+				<span class="Statement">for</span> x <span class="Statement">in</span> files:
+					xp = path.abspath(path.join(root,x))
+					rxp = xp[<span class="Constant">1</span>:]
+					<span class="Statement">if</span> rxp <span class="Statement">not</span> <span class="Statement">in</span> filelist:
+						<span class="Comment">#print &quot;LNK  &quot;, rxp</span>
+						symlink(xp,rxp)
+					<span class="Statement">else</span>:   <span class="Comment"># Get local version</span>
+						<span class="Comment">#print &quot;GET  &quot;, rxp</span>
+						self.getfile(rxp)
+						exclude_list.append(rxp)
+
+				<span class="Comment"># Get local files</span>
+				<span class="Statement">if</span> root[<span class="Constant">1</span>:] <span class="Statement">in</span> filelist:
+					rp = path.join(self.temporary_directory_payload,root[<span class="Constant">1</span>:])
+					<span class="Statement">for</span> x <span class="Statement">in</span> listdir(rp):
+						rxp = path.abspath(path.join(root,x))[<span class="Constant">1</span>:]
+						<span class="Statement">if</span> rxp <span class="Statement">not</span> <span class="Statement">in</span> exclude_list <span class="Statement">and</span> path.isfile(path.join(rp,x)):
+							<span class="Comment">#print &quot;GET  &quot;, rxp</span>
+							self.getfile(rxp)
+
+			self.runable = <span class="Constant">1</span>
+			<span class="Statement">return</span> <span class="Identifier">True</span>
+		<span class="Statement">except</span>:
+			<span class="Identifier">print</span> <span class="Constant">&quot;Broke.&quot;</span>
+			<span class="Statement">return</span> <span class="Identifier">False</span>
+		<span class="Statement">finally</span>:
+			chdir(cwd)
+
+	<span class="Statement">def</span> <span class="Identifier">run</span>(self,executable):
+		<span class="Statement">if</span> <span class="Statement">not</span> self.runable <span class="Statement">or</span> self.force_run: <span class="Statement">return</span> <span class="Identifier">False</span>
+		proc = subprocess.Popen([<span class="Constant">&quot;fakechroot&quot;</span>,<span class="Constant">&quot;chroot&quot;</span>,self.temporary_directory_jail] + executable,stdout=subprocess.PIPE)
+		proc.wait()
+		self.log.write(proc.stdout.read())
+
+
+<span class="Statement">class</span> <span class="Identifier">BundleScript</span>(BundleJail):
+	<span class="Statement">def</span> <span class="Identifier">__init__</span>(self,bundle_file):
+		BundleJail.__init__(self,bundle_file)
+
+	<span class="Statement">def</span> <span class="Identifier">issue_warning</span>(self):
+		<span class="Identifier">print</span> <span class="Constant">&quot;Warning! This program has been downloaded from the internet. It might compromise your system security.&quot;</span>
+	        self.put_metafile_value(<span class="Constant">&quot;safe&quot;</span>,<span class="Constant">1</span>)
+
+	<span class="Statement">def</span> <span class="Identifier">check_dependencies</span>(self,deplist):
+		<span class="Statement">pass</span>
+
+
+<span class="Statement">def</span> <span class="Identifier">launch_bundle</span>(bundlepath):
+	bundlepath = path.abspath(bundlepath)
+	directory,filename = path.split(bundlepath)
+	<span class="Statement">if</span> <span class="Statement">not</span> access(bundlepath,R_OK): <span class="Statement">return</span> <span class="Identifier">False</span>
+	cwd = getcwd()
+	chdir(directory)
+	<span class="Statement">with</span> BundleData(bundlepath) <span class="Statement">as</span> bundle:
+		scrpt = bundle.extractfile(bundle.getmember(path.join(bundle.DIRECTORY_SCRIPTS,<span class="Constant">&quot;Run&quot;</span>)))
+		xnam = tempnam()
+		<span class="Statement">with</span> <span class="Identifier">open</span>(xnam,<span class="Constant">&quot;w&quot;</span>) <span class="Statement">as</span> scrptfile:
+			scrptfile.write(scrpt.read())
+		chmod(xnam,<span class="Constant">0777</span>)
+		<span class="Statement">try</span>:
+			system(xnam)
+			<span class="Statement">return</span> <span class="Identifier">True</span>
+		<span class="Statement">except</span>:
+			<span class="Statement">return</span> <span class="Identifier">False</span>
+		<span class="Statement">finally</span>:
+			chdir(cwd)
+			remove(xnam)
+			system(<span class="Constant">&quot;rm -R /tmp/bun*&quot;</span>)
+
+
+
+</pre>
+</body>
+</html>

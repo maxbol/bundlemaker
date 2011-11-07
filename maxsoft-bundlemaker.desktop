@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Montera Debian-paket
+Exec=/usr/local/bin/bundlemaker %u
+MimeType=application/x-deb;application/x-debian-package;
+Terminal=false
+StartupNotify=false
+Type=Application
+NoDisplay=true
+X-Ubuntu-Gettext-Domain=nautilus
+
